@@ -1,5 +1,6 @@
 const { Schema, model } = require("mongoose");
 const { createHmac, randomBytes } = require("crypto");
+const { createTokenForUser } = require("../services/authentication");
 
 const userSchema = new Schema(
   {
@@ -14,7 +15,6 @@ const userSchema = new Schema(
     },
     salt: {
       type: String,
-      required: true,
     },
     password: {
       type: String,
@@ -42,10 +42,28 @@ userSchema.pre("save", function (next) {
     .update(user.password)
     .digest("hex");
 
-    this.salt=salt;
-    this.password=hashedPassword;
+  this.salt = salt;
+  this.password = hashedPassword;
 
-    next();
+  next();
+});
+
+//virtual functions in mongodb
+
+userSchema.static("matchPasswordAndGenerateTokens", async function (email, password) {
+  const user = await this.findOne({ email });
+  if (!user) throw new Error("User Not Found");
+
+  const salt = user.salt;
+  const hashedPassword = user.password;
+
+  const userProvidedHash = createHmac("sha256", salt)
+    .update(password)
+    .digest("hex");
+  if (hashedPassword !== userProvidedHash)
+    throw new Error("User Password Wrong");
+  const token = createTokenForUser(user);
+  return token;
 });
 
 const User = model("user", userSchema);
